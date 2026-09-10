@@ -93,15 +93,15 @@
           a: Math.random() * Math.PI * 2,
           tw: Math.random() * 0.8 + 0.2,
           drift: (Math.random() - 0.5) * 0.12,
-          pull: 0.28 + ((r - 0.2) / 1.15) * 0.5
+          pull: 0.14 + ((r - 0.2) / 1.15) * 0.22
         });
       }
     }
 
     function tick(t) {
       if (pointer.active) {
-        pointer.x += (pointer.tx - pointer.x) * 0.18;
-        pointer.y += (pointer.ty - pointer.y) * 0.18;
+        pointer.x += (pointer.tx - pointer.x) * 0.14;
+        pointer.y += (pointer.ty - pointer.y) * 0.14;
       } else {
         pointer.tx += (w * 0.5 - pointer.tx) * 0.03;
         pointer.ty += (h * 0.5 - pointer.ty) * 0.03;
@@ -114,7 +114,7 @@
         const dx = pointer.x - star.x;
         const dy = pointer.y - star.y;
         const dist = Math.hypot(dx, dy) || 1;
-        const force = Math.min(star.pull * 280 / (dist + 60), 2.4);
+        const force = Math.min(star.pull * 180 / (dist + 80), 1.15);
         star.x += star.drift + (dx / dist) * force;
         star.y += -star.s + (dy / dist) * force;
         if (star.y < -4) { star.y = h + 4; star.x = Math.random() * w; }
