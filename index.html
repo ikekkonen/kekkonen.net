@@ -73,12 +73,6 @@
       canvas.style.width = w + "px";
       canvas.style.height = h + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (!pointer.active) {
-        pointer.tx = w * 0.5;
-        pointer.ty = h * 0.5;
-        pointer.x = pointer.tx;
-        pointer.y = pointer.ty;
-      }
     }
 
     function spawn(count) {
@@ -102,21 +96,22 @@
       if (pointer.active) {
         pointer.x += (pointer.tx - pointer.x) * 0.14;
         pointer.y += (pointer.ty - pointer.y) * 0.14;
-      } else {
-        pointer.tx += (w * 0.5 - pointer.tx) * 0.03;
-        pointer.ty += (h * 0.5 - pointer.ty) * 0.03;
-        pointer.x += (pointer.tx - pointer.x) * 0.04;
-        pointer.y += (pointer.ty - pointer.y) * 0.04;
       }
 
       ctx.clearRect(0, 0, w, h);
       for (const star of stars) {
-        const dx = pointer.x - star.x;
-        const dy = pointer.y - star.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const force = Math.min(star.pull * 180 / (dist + 80), 1.15);
-        star.x += star.drift + (dx / dist) * force;
-        star.y += -star.s + (dy / dist) * force;
+        let fx = star.drift;
+        let fy = -star.s;
+        if (pointer.active) {
+          const dx = pointer.x - star.x;
+          const dy = pointer.y - star.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const force = Math.min(star.pull * 180 / (dist + 80), 1.15);
+          fx += (dx / dist) * force;
+          fy += (dy / dist) * force;
+        }
+        star.x += fx;
+        star.y += fy;
         if (star.y < -4) { star.y = h + 4; star.x = Math.random() * w; }
         if (star.x < -4) star.x = w + 4;
         if (star.x > w + 4) star.x = -4;
@@ -144,6 +139,10 @@
     }, { passive: true });
 
     document.documentElement.addEventListener("mouseleave", () => {
+      pointer.active = false;
+    });
+
+    window.addEventListener("blur", () => {
       pointer.active = false;
     });
 
