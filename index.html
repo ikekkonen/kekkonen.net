@@ -62,6 +62,7 @@
     const ctx = canvas.getContext("2d");
     const stars = [];
     let w = 0, h = 0, raf;
+    const pointer = { x: 0, y: 0, tx: 0, ty: 0, active: false };
 
     function resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -72,28 +73,50 @@
       canvas.style.width = w + "px";
       canvas.style.height = h + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (!pointer.active) {
+        pointer.tx = w * 0.5;
+        pointer.ty = h * 0.5;
+        pointer.x = pointer.tx;
+        pointer.y = pointer.ty;
+      }
     }
 
     function spawn(count) {
       stars.length = 0;
       for (let i = 0; i < count; i++) {
+        const r = Math.random() * 1.15 + 0.2;
         stars.push({
           x: Math.random() * w,
           y: Math.random() * h,
-          r: Math.random() * 1.15 + 0.2,
+          r,
           s: Math.random() * 0.18 + 0.03,
           a: Math.random() * Math.PI * 2,
           tw: Math.random() * 0.8 + 0.2,
-          drift: (Math.random() - 0.5) * 0.12
+          drift: (Math.random() - 0.5) * 0.12,
+          pull: 0.012 + ((r - 0.2) / 1.15) * 0.03
         });
       }
     }
 
     function tick(t) {
+      if (pointer.active) {
+        pointer.x += (pointer.tx - pointer.x) * 0.12;
+        pointer.y += (pointer.ty - pointer.y) * 0.12;
+      } else {
+        pointer.tx += (w * 0.5 - pointer.tx) * 0.03;
+        pointer.ty += (h * 0.5 - pointer.ty) * 0.03;
+        pointer.x += (pointer.tx - pointer.x) * 0.04;
+        pointer.y += (pointer.ty - pointer.y) * 0.04;
+      }
+
       ctx.clearRect(0, 0, w, h);
       for (const star of stars) {
-        star.y -= star.s;
-        star.x += star.drift;
+        const dx = pointer.x - star.x;
+        const dy = pointer.y - star.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const force = Math.min(star.pull / (1 + dist * 0.008), 0.35);
+        star.x += star.drift + (dx / dist) * force;
+        star.y += -star.s + (dy / dist) * force;
         if (star.y < -4) { star.y = h + 4; star.x = Math.random() * w; }
         if (star.x < -4) star.x = w + 4;
         if (star.x > w + 4) star.x = -4;
@@ -113,6 +136,16 @@
       spawn(Math.max(80, Math.min(count, 220)));
       raf = requestAnimationFrame(tick);
     }
+
+    window.addEventListener("pointermove", (e) => {
+      pointer.active = true;
+      pointer.tx = e.clientX;
+      pointer.ty = e.clientY;
+    }, { passive: true });
+
+    document.documentElement.addEventListener("mouseleave", () => {
+      pointer.active = false;
+    });
 
     window.addEventListener("resize", start);
     start();
