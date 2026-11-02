@@ -75,8 +75,22 @@
       y: window.innerHeight / 2,
       tx: window.innerWidth / 2,
       ty: window.innerHeight / 2,
-      active: false
+      active: false,
+      intensity: 0
     };
+
+    let idleTimer = null;
+    function touchActivity(x, y) {
+      pointer.active = true;
+      pointer.tx = x;
+      pointer.ty = y;
+
+      clearTimeout(idleTimer);
+      // Nollataan / unohdetaan kohdistuspiste 10 sekunnin kuluessa ilman uutta kosketusta
+      idleTimer = setTimeout(() => {
+        pointer.active = false;
+      }, 10000);
+    }
 
     function resize() {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -155,8 +169,11 @@
     let nextMeteorDelay = 3500 + Math.random() * 5000;
 
     function tick(t) {
-      // Pehmeä hiiren interpolointi
-      if (pointer.active) {
+      // Pehmeä hiiren/kosketuksen voimakkuus ja interpolointi
+      const targetIntensity = pointer.active ? 1 : 0;
+      pointer.intensity += (targetIntensity - pointer.intensity) * 0.05;
+
+      if (pointer.intensity > 0.001) {
         pointer.x += (pointer.tx - pointer.x) * 0.08;
         pointer.y += (pointer.ty - pointer.y) * 0.08;
       }
@@ -165,8 +182,8 @@
 
       // 1. Kosminen sumu (Nebula glow) hiiren ja keskipisteen ympärillä
       const bgGlow = ctx.createRadialGradient(
-        pointer.active ? pointer.x : w * 0.5,
-        pointer.active ? pointer.y : h * 0.5,
+        pointer.intensity > 0.01 ? pointer.x : w * 0.5,
+        pointer.intensity > 0.01 ? pointer.y : h * 0.5,
         10,
         w * 0.5,
         h * 0.5,
@@ -198,8 +215,8 @@
         ctx.restore();
       }
 
-      // 3. Tähtikuvioiden viivat lähellä hiirtä (Interactive Constellations)
-      if (pointer.active) {
+      // 3. Tähtikuvioiden viivat lähellä hiirtä/kosketusta (Interactive Constellations)
+      if (pointer.intensity > 0.02) {
         const connectionRadius = 140;
         const nearbyStars = [];
 
@@ -216,8 +233,8 @@
         ctx.lineWidth = 0.65;
         for (let i = 0; i < nearbyStars.length; i++) {
           const p1 = nearbyStars[i];
-          // Viiva hiireen
-          const lineAlpha = (1 - (p1.dist / connectionRadius)) * 0.28;
+          // Viiva osoittimeen
+          const lineAlpha = (1 - (p1.dist / connectionRadius)) * 0.28 * pointer.intensity;
           ctx.beginPath();
           ctx.strokeStyle = `rgba(180, 215, 255, ${lineAlpha})`;
           ctx.moveTo(pointer.x, pointer.y);
@@ -229,7 +246,7 @@
             const p2 = nearbyStars[j];
             const dBetween = Math.hypot(p1.star.x - p2.star.x, p1.star.y - p2.star.y);
             if (dBetween < 95) {
-              const starLineAlpha = (1 - (dBetween / 95)) * 0.22;
+              const starLineAlpha = (1 - (dBetween / 95)) * 0.22 * pointer.intensity;
               ctx.beginPath();
               ctx.strokeStyle = `rgba(200, 225, 255, ${starLineAlpha})`;
               ctx.moveTo(p1.star.x, p1.star.y);
@@ -249,15 +266,15 @@
         star.y -= star.speed;
         star.x += star.drift;
 
-        // Parallaksi ja painovoima / väistö hiiren mukaan
-        if (pointer.active) {
+        // Parallaksi ja painovoima / väistö osoittimen mukaan
+        if (pointer.intensity > 0.01) {
           const dx = pointer.x - star.x;
           const dy = pointer.y - star.y;
           const dist = Math.hypot(dx, dy) || 1;
 
           if (dist < mouseInfluenceRadius) {
-            // Hieno houkutus ja parallaksisiirtymä
-            const pullFactor = (1 - dist / mouseInfluenceRadius) * star.depth * 0.85;
+            // Hieno houkutus ja parallaksisiirtymä vaimennettuna intensiteetin mukaan
+            const pullFactor = (1 - dist / mouseInfluenceRadius) * star.depth * 0.85 * pointer.intensity;
             star.x += (dx / dist) * pullFactor;
             star.y += (dy / dist) * pullFactor;
           }
@@ -366,12 +383,11 @@
 
     // Tapahtumankäsittelijät
     window.addEventListener("pointermove", (e) => {
-      pointer.active = true;
-      pointer.tx = e.clientX;
-      pointer.ty = e.clientY;
+      touchActivity(e.clientX, e.clientY);
     }, { passive: true });
 
     window.addEventListener("pointerdown", (e) => {
+      touchActivity(e.clientX, e.clientY);
       triggerRipple(e.clientX, e.clientY);
       // Mahdollisuus luoda heti tähdenlento klikkauksella
       if (Math.random() < 0.6) {
@@ -381,10 +397,12 @@
 
     document.documentElement.addEventListener("mouseleave", () => {
       pointer.active = false;
+      clearTimeout(idleTimer);
     });
 
     window.addEventListener("blur", () => {
       pointer.active = false;
+      clearTimeout(idleTimer);
     });
 
     window.addEventListener("resize", start);
