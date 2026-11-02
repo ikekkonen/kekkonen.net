@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@200;300&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #000;
+      --bg: #030408;
       --fg: #f5f5f5;
     }
 
@@ -23,6 +23,7 @@
       font-family: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
       overflow: hidden;
+      user-select: none;
     }
 
     canvas {
@@ -31,6 +32,7 @@
       width: 100%;
       height: 100%;
       z-index: 0;
+      display: block;
     }
 
     main {
@@ -41,14 +43,16 @@
       place-items: center;
       padding: 2rem;
       text-align: center;
+      pointer-events: none;
     }
 
     h1 {
       font-weight: 200;
-      font-size: clamp(2.6rem, 9vw, 6.2rem);
+      font-size: clamp(2.8rem, 9.5vw, 6.5rem);
       letter-spacing: -0.055em;
       line-height: 0.95;
-      text-shadow: 0 0 48px rgba(255,255,255,0.08);
+      text-shadow: 0 0 35px rgba(255, 255, 255, 0.15), 0 0 70px rgba(120, 160, 255, 0.12);
+      transition: text-shadow 0.6s ease;
     }
   </style>
 </head>
@@ -60,83 +64,320 @@
   <script>
     const canvas = document.getElementById("stars");
     const ctx = canvas.getContext("2d");
+    let w = 0, h = 0, dpr = 1, raf;
+
     const stars = [];
-    let w = 0, h = 0, raf;
-    const pointer = { x: 0, y: 0, tx: 0, ty: 0, active: false };
+    const shootingStars = [];
+    const ripples = [];
+
+    const pointer = {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+      tx: window.innerWidth / 2,
+      ty: window.innerHeight / 2,
+      active: false
+    };
 
     function resize() {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
       w = window.innerWidth;
       h = window.innerHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
       canvas.style.width = w + "px";
       canvas.style.height = h + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    function spawn(count) {
+    function spawnStars() {
       stars.length = 0;
-      for (let i = 0; i < count; i++) {
-        const r = Math.random() * 1.15 + 0.2;
+      // Mukautuva tähtimäärä ruudun koon mukaan
+      const count = Math.round(Math.min(w, h) * 0.32);
+      const total = Math.max(120, Math.min(count, 320));
+
+      for (let i = 0; i < total; i++) {
+        // Syvyyskerros 0.1 (kaukana) - 1.0 (lähellä)
+        const depth = Math.random() * 0.9 + 0.1;
+        const isBright = Math.random() < 0.08; // Erityisen kirkas tähti hehkulla
+
+        // Värisävy: suurin osa puhtaan valkoisia, osa hento sinertävä tai kultainen
+        let hue = 0;
+        const tintRoll = Math.random();
+        if (tintRoll < 0.2) hue = 215; // Kylmä sinertävä
+        else if (tintRoll < 0.32) hue = 40; // Lämmin kultainen
+
         stars.push({
           x: Math.random() * w,
           y: Math.random() * h,
-          r,
-          s: Math.random() * 0.18 + 0.03,
-          a: Math.random() * Math.PI * 2,
-          tw: Math.random() * 0.8 + 0.2,
-          drift: (Math.random() - 0.5) * 0.12,
-          pull: 0.14 + ((r - 0.2) / 1.15) * 0.22
+          baseRadius: (depth * 1.35 + 0.3) * (isBright ? 1.4 : 1),
+          depth,
+          isBright,
+          hue,
+          speed: (0.05 + depth * 0.15),
+          drift: (Math.random() - 0.5) * 0.06,
+          twinkleSpeed: 0.001 + Math.random() * 0.0025,
+          twinklePhase: Math.random() * Math.PI * 2
         });
       }
     }
 
+    function addShootingStar() {
+      // Satunnainen lähtöpiste taivaan yläreunasta / sivulta
+      const startX = Math.random() * w * 1.2 - w * 0.1;
+      const startY = Math.random() * (h * 0.45);
+      const angle = (Math.PI / 4) + (Math.random() - 0.5) * 0.3; // n. 45 asteen kulmassa
+      const speed = 7 + Math.random() * 6;
+      const len = 90 + Math.random() * 90;
+
+      shootingStars.push({
+        x: startX,
+        y: startY,
+        dx: Math.cos(angle) * speed,
+        dy: Math.sin(angle) * speed,
+        len,
+        opacity: 1,
+        fadeSpeed: 0.015 + Math.random() * 0.015,
+        width: 1.2 + Math.random() * 1.4
+      });
+    }
+
+    function triggerRipple(x, y) {
+      ripples.push({
+        x,
+        y,
+        radius: 0,
+        maxRadius: Math.min(w, h) * 0.38,
+        opacity: 0.7
+      });
+    }
+
+    let lastMeteorTime = performance.now();
+    let nextMeteorDelay = 3500 + Math.random() * 5000;
+
     function tick(t) {
+      // Pehmeä hiiren interpolointi
       if (pointer.active) {
-        pointer.x += (pointer.tx - pointer.x) * 0.14;
-        pointer.y += (pointer.ty - pointer.y) * 0.14;
+        pointer.x += (pointer.tx - pointer.x) * 0.08;
+        pointer.y += (pointer.ty - pointer.y) * 0.08;
       }
 
       ctx.clearRect(0, 0, w, h);
+
+      // 1. Kosminen sumu (Nebula glow) hiiren ja keskipisteen ympärillä
+      const bgGlow = ctx.createRadialGradient(
+        pointer.active ? pointer.x : w * 0.5,
+        pointer.active ? pointer.y : h * 0.5,
+        10,
+        w * 0.5,
+        h * 0.5,
+        Math.max(w, h) * 0.75
+      );
+      bgGlow.addColorStop(0, "rgba(22, 33, 62, 0.45)");
+      bgGlow.addColorStop(0.5, "rgba(12, 18, 38, 0.25)");
+      bgGlow.addColorStop(1, "rgba(3, 4, 8, 0)");
+      ctx.fillStyle = bgGlow;
+      ctx.fillRect(0, 0, w, h);
+
+      // 2. Klikkausaallot (Ripples)
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rp = ripples[i];
+        rp.radius += 3.2;
+        rp.opacity *= 0.965;
+
+        if (rp.opacity < 0.01 || rp.radius > rp.maxRadius) {
+          ripples.splice(i, 1);
+          continue;
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(rp.x, rp.y, rp.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(160, 200, 255, ${rp.opacity * 0.35})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 3. Tähtikuvioiden viivat lähellä hiirtä (Interactive Constellations)
+      if (pointer.active) {
+        const connectionRadius = 140;
+        const nearbyStars = [];
+
+        for (const star of stars) {
+          const dx = pointer.x - star.x;
+          const dy = pointer.y - star.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < connectionRadius) {
+            nearbyStars.push({ star, dist });
+          }
+        }
+
+        ctx.save();
+        ctx.lineWidth = 0.65;
+        for (let i = 0; i < nearbyStars.length; i++) {
+          const p1 = nearbyStars[i];
+          // Viiva hiireen
+          const lineAlpha = (1 - (p1.dist / connectionRadius)) * 0.28;
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(180, 215, 255, ${lineAlpha})`;
+          ctx.moveTo(pointer.x, pointer.y);
+          ctx.lineTo(p1.star.x, p1.star.y);
+          ctx.stroke();
+
+          // Viivat vierekkäisten tähtien välille
+          for (let j = i + 1; j < nearbyStars.length; j++) {
+            const p2 = nearbyStars[j];
+            const dBetween = Math.hypot(p1.star.x - p2.star.x, p1.star.y - p2.star.y);
+            if (dBetween < 95) {
+              const starLineAlpha = (1 - (dBetween / 95)) * 0.22;
+              ctx.beginPath();
+              ctx.strokeStyle = `rgba(200, 225, 255, ${starLineAlpha})`;
+              ctx.moveTo(p1.star.x, p1.star.y);
+              ctx.lineTo(p2.star.x, p2.star.y);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.restore();
+      }
+
+      // 4. Tähtien päivitys ja piirto
+      const mouseInfluenceRadius = 240;
+
       for (const star of stars) {
-        let fx = star.drift;
-        let fy = -star.s;
+        // Luonnollinen liike ylöspäin
+        star.y -= star.speed;
+        star.x += star.drift;
+
+        // Parallaksi ja painovoima / väistö hiiren mukaan
         if (pointer.active) {
           const dx = pointer.x - star.x;
           const dy = pointer.y - star.y;
           const dist = Math.hypot(dx, dy) || 1;
-          const force = Math.min(star.pull * 180 / (dist + 80), 1.15);
-          fx += (dx / dist) * force;
-          fy += (dy / dist) * force;
+
+          if (dist < mouseInfluenceRadius) {
+            // Hieno houkutus ja parallaksisiirtymä
+            const pullFactor = (1 - dist / mouseInfluenceRadius) * star.depth * 0.85;
+            star.x += (dx / dist) * pullFactor;
+            star.y += (dy / dist) * pullFactor;
+          }
         }
-        star.x += fx;
-        star.y += fy;
-        if (star.y < -4) { star.y = h + 4; star.x = Math.random() * w; }
-        if (star.x < -4) star.x = w + 4;
-        if (star.x > w + 4) star.x = -4;
-        const twinkle = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 0.0015 * star.tw + star.a));
+
+        // Reunan ylitys
+        if (star.y < -10) {
+          star.y = h + 10;
+          star.x = Math.random() * w;
+        }
+        if (star.x < -10) star.x = w + 10;
+        if (star.x > w + 10) star.x = -10;
+
+        // Tuikinta
+        const twinkle = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * star.twinkleSpeed + star.twinklePhase));
+        const alpha = Math.min(1, Math.max(0.15, twinkle * star.depth));
+
+        // Väri
+        let fill = `rgba(255, 255, 255, ${alpha})`;
+        if (star.hue === 215) {
+          fill = `rgba(185, 215, 255, ${alpha})`;
+        } else if (star.hue === 40) {
+          fill = `rgba(255, 230, 190, ${alpha})`;
+        }
+
+        // Kirkkaiden tähtien pehmeä sädekehä (Glow)
+        if (star.isBright) {
+          const glowGrad = ctx.createRadialGradient(
+            star.x, star.y, 0,
+            star.x, star.y, star.baseRadius * 4.2
+          );
+          glowGrad.addColorStop(0, `rgba(210, 230, 255, ${alpha * 0.65})`);
+          glowGrad.addColorStop(1, "rgba(210, 230, 255, 0)");
+          ctx.beginPath();
+          ctx.fillStyle = glowGrad;
+          ctx.arc(star.x, star.y, star.baseRadius * 4.2, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Diffraktioristi isoimmille tähdille
+          if (star.depth > 0.7) {
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.45})`;
+            ctx.lineWidth = 0.6;
+            const spikeLen = star.baseRadius * 3.5;
+            ctx.beginPath();
+            ctx.moveTo(star.x - spikeLen, star.y);
+            ctx.lineTo(star.x + spikeLen, star.y);
+            ctx.moveTo(star.x, star.y - spikeLen);
+            ctx.lineTo(star.x, star.y + spikeLen);
+            ctx.stroke();
+          }
+        }
+
+        // Tähden ydin
         ctx.beginPath();
-        ctx.fillStyle = `rgba(255,255,255,${twinkle})`;
-        ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.arc(star.x, star.y, star.baseRadius, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // 5. Tähdenlennot (Shooting stars / Meteors)
+      if (t - lastMeteorTime > nextMeteorDelay) {
+        addShootingStar();
+        lastMeteorTime = t;
+        nextMeteorDelay = 2500 + Math.random() * 5500;
+      }
+
+      for (let i = shootingStars.length - 1; i >= 0; i--) {
+        const s = shootingStars[i];
+        s.x += s.dx;
+        s.y += s.dy;
+        s.opacity -= s.fadeSpeed;
+
+        if (s.opacity <= 0 || s.x > w + 200 || s.y > h + 200) {
+          shootingStars.splice(i, 1);
+          continue;
+        }
+
+        const tailX = s.x - (s.dx / Math.hypot(s.dx, s.dy)) * s.len;
+        const tailY = s.y - (s.dy / Math.hypot(s.dx, s.dy)) * s.len;
+
+        const grad = ctx.createLinearGradient(s.x, s.y, tailX, tailY);
+        grad.addColorStop(0, `rgba(255, 255, 255, ${s.opacity})`);
+        grad.addColorStop(0.3, `rgba(180, 220, 255, ${s.opacity * 0.7})`);
+        grad.addColorStop(1, "rgba(100, 150, 255, 0)");
+
+        ctx.save();
+        ctx.lineWidth = s.width;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(tailX, tailY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       raf = requestAnimationFrame(tick);
     }
 
     function start() {
       cancelAnimationFrame(raf);
       resize();
-      const count = Math.round(Math.min(w, h) * 0.22);
-      spawn(Math.max(80, Math.min(count, 220)));
+      spawnStars();
       raf = requestAnimationFrame(tick);
     }
 
+    // Tapahtumankäsittelijät
     window.addEventListener("pointermove", (e) => {
       pointer.active = true;
       pointer.tx = e.clientX;
       pointer.ty = e.clientY;
     }, { passive: true });
+
+    window.addEventListener("pointerdown", (e) => {
+      triggerRipple(e.clientX, e.clientY);
+      // Mahdollisuus luoda heti tähdenlento klikkauksella
+      if (Math.random() < 0.6) {
+        addShootingStar();
+      }
+    });
 
     document.documentElement.addEventListener("mouseleave", () => {
       pointer.active = false;
